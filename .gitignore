@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.env
 *.env
 .venv/
 venv/
@@ -15,6 +16,9 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Large combined duplicate files (etl.py uses green_tripdata_2021-*.parquet directly)
+# Large combined duplicate files or temporary exports
+data/*_combined.parquet
+data/*_enriched.parquet
+data/*.tmp
 green_tripdata_2021_combined.parquet
 green_tripdata_2021_enriched.parquet

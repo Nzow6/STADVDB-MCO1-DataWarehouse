@@ -2,8 +2,35 @@
 **NYC Green Taxi 2021 Data Warehouse**
 
 This repository contains the complete database foundation and automated ETL implementation for **STADVDB MCO1**:
-- **Target Star Schema DDL** for MySQL 8.0 (`schema.sql`).
-- **High-Performance DuckDB ETL Pipeline** (`etl.py`) extracting from 2021 NYC Green Taxi Parquet data and loading 1,052,419 rows into MySQL.
+- **Target Star Schema DDL** for MySQL 8.0 ([`sql/schema.sql`](sql/schema.sql)).
+- **High-Performance DuckDB ETL Pipeline** ([`src/etl.py`](src/etl.py)) extracting from 2021 NYC Green Taxi Parquet data in [`data/`](data/) and loading 1,052,419 rows into MySQL.
+
+---
+
+## 📁 Repository Structure
+
+```
+├── data/                                 # Raw data files
+│   ├── green_tripdata_2021-01.parquet    # Monthly NYC Green Taxi records (Jan - Dec 2021)
+│   ├── ...
+│   ├── green_tripdata_2021-12.parquet
+│   └── taxi_zone_lookup.csv              # Official NYC TLC taxi zones 1–263
+├── docs/                                 # Project documentation, specifications & slides
+│   ├── STADVDB MCO1 - Query Processing in Data Warehouse.pdf
+│   ├── STADVDB Slides 03a - MCO1 Requirements.pptx
+│   ├── [STADVDB] Master Doc.pdf
+│   └── pdf_text.txt
+├── sql/                                  # Database DDL & star schema definitions
+│   └── schema.sql                        # Target Star Schema DDL for MySQL 8.0
+├── src/                                  # Source code
+│   ├── __init__.py
+│   └── etl.py                            # Core DuckDB & MySQL ETL pipeline
+├── .env.example                          # Example environment variables template
+├── .env                                  # Local DB credentials (gitignored)
+├── .gitignore                            # Git ignore rules
+├── README.md                             # Comprehensive project documentation
+└── requirements.txt                      # Python dependencies
+```
 
 ---
 
@@ -45,12 +72,12 @@ The data warehouse follows a **Star Schema** centered on the `fact_green_trips` 
 
 ## 🔄 The Data Population & ETL Process (Step-by-Step)
 
-The entire population process is automated inside `etl.py` using **DuckDB** and **MySQL Connector**:
+The entire population process is automated inside [`src/etl.py`](src/etl.py) using **DuckDB** and **MySQL Connector**:
 
 ### Step 1: DDL & Schema Initialization
 1. Creates the database `green_taxi_dw` if it does not already exist.
 2. Drops existing tables in reverse foreign-key dependency order to allow clean re-runs.
-3. Executes `schema.sql` to instantiate the 7 dimension tables and `fact_green_trips` using MySQL InnoDB engine with `utf8mb4` encoding, foreign key constraints, and performance indexes.
+3. Executes [`sql/schema.sql`](sql/schema.sql) to instantiate the 7 dimension tables and `fact_green_trips` using MySQL InnoDB engine with `utf8mb4` encoding, foreign key constraints, and performance indexes.
 
 ### Step 2: Populating the Dimension Tables
 * **Static Lookup Dimensions:**
@@ -59,7 +86,7 @@ The entire population process is automated inside `etl.py` using **DuckDB** and 
   * `dim_payment_type`: Populates 6 payment categories (1: Credit card, 2: Cash, 3: No charge, 4: Dispute, 5: Unknown, 6: Voided trip).
   * `dim_trip_type`: Populates 2 trip types (1: Street-hail, 2: Dispatch).
 * **Location Dimension (`dim_location`):**
-  * Reads `taxi_zone_lookup.csv` using pandas.
+  * Reads [`data/taxi_zone_lookup.csv`](data/taxi_zone_lookup.csv) using pandas.
   * Filters to official NYC zones $1 \le \text{LocationID} \le 263$.
   * Handles missing values by replacing `NULL` boroughs, zones, or service zones with `'Unknown'`.
   * Ingests 263 zone rows via `executemany` with `ON DUPLICATE KEY UPDATE`.
@@ -78,7 +105,7 @@ The entire population process is automated inside `etl.py` using **DuckDB** and 
   * Sets `is_peak_surcharge = 1` for Evening Rush hours 16–19, else 0.
 
 ### Step 3: Extracting, Transforming & Cleaning Fact Records
-DuckDB processes all 12 raw monthly Parquet files (`green_tripdata_2021-01.parquet` through `green_tripdata_2021-12.parquet`) concurrently without memory exhaustion:
+DuckDB processes all 12 raw monthly Parquet files (`data/green_tripdata_2021-01.parquet` through `data/green_tripdata_2021-12.parquet`) concurrently without memory exhaustion:
 * **Filtering Criteria:**
   1. `lpep_pickup_datetime >= '2021-01-01' AND lpep_pickup_datetime < '2022-01-01'` — Eliminates corrupt/out-of-scope timestamps.
   2. `lpep_dropoff_datetime >= lpep_pickup_datetime` — Eliminates inverted timestamp anomalies.
@@ -108,30 +135,30 @@ Anyone on your team can reproduce the exact same database in **under 3 minutes**
 ### 1. Prerequisites
 - **MySQL 8.0+** running locally (default port `3306`).
 - **Python 3.10+**.
-- Required Python libraries:
+- Install required Python dependencies:
   ```bash
-  pip install pandas duckdb mysql-connector-python pyarrow
+  pip install -r requirements.txt
   ```
 
-### 2. Configure Credentials (Optional)
-By default, `etl.py` connects using:
-- **User:** `root`
-- **Password:** `password`
-- **Database:** `green_taxi_dw`
-
-If your local MySQL credentials differ, set environment variables before running:
+### 2. Configure Credentials via `.env`
+Copy `.env.example` to `.env` (or edit the existing `.env`):
 ```bash
-# In Windows PowerShell:
-$env:MYSQL_PASSWORD = "your_mysql_password"
-
-# In Bash / macOS / Linux:
-export MYSQL_PASSWORD="your_mysql_password"
+cp .env.example .env
 ```
+Update your credentials in `.env`:
+```env
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your_mysql_password
+MYSQL_DATABASE=green_taxi_dw
+```
+*Note: Environment variables (e.g. `MYSQL_PASSWORD`) also work and will override `.env` values if set.*
 
 ### 3. Run the ETL Pipeline
-Run the ETL script from the project folder:
+Run the ETL script from the project root:
 ```bash
-python etl.py
+python src/etl.py
 ```
 
 ---

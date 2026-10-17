@@ -4,35 +4,63 @@ STADVDB MCO1: DuckDB to MySQL ETL Pipeline for NYC Green Taxi 2021 Data Warehous
 ==============================================================================
 """
 
-import os
-import sys
-import time
-import datetime
 import calendar
-import pandas as pd
+import datetime
+import os
+import time
 import duckdb
 import mysql.connector
+import pandas as pd
 
 # ------------------------------------------------------------------------------
-# Configuration (Can be overridden via environment variables)
+# Directory Paths (Resolved relative to project root)
+# ------------------------------------------------------------------------------
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SRC_DIR)
+
+DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+SQL_DIR = os.path.join(PROJECT_ROOT, 'sql')
+ENV_FILE = os.path.join(PROJECT_ROOT, '.env')
+
+TAX_ZONE_CSV = os.path.join(DATA_DIR, 'taxi_zone_lookup.csv')
+PARQUET_PATTERN = os.path.join(DATA_DIR, 'green_tripdata_2021-*.parquet').replace('\\', '/')
+SCHEMA_SQL = os.path.join(SQL_DIR, 'schema.sql')
+
+# MySQL Uploads folder for ultra-fast LOAD DATA INFILE
+MYSQL_UPLOADS_DIR = r"C:\ProgramData\MySQL\MySQL Server 8.0\Uploads"
+EXPORT_CSV_PATH = os.path.join(MYSQL_UPLOADS_DIR, "fact_green_trips.csv").replace('\\', '/')
+
+
+def load_env(env_path):
+    """Loads environment variables from .env file into os.environ if present."""
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#') or '=' not in stripped:
+                continue
+            key, val = stripped.split('=', 1)
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            # Set into os.environ only if not already explicitly set
+            if key and key not in os.environ:
+                os.environ[key] = val
+
+
+load_env(ENV_FILE)
+
+# ------------------------------------------------------------------------------
+# Configuration (Can be set in .env or via environment variables)
 # ------------------------------------------------------------------------------
 DB_CONFIG = {
     'host': os.environ.get('MYSQL_HOST', '127.0.0.1'),
-    'port': int(os.environ.get('MYSQL_PORT', 3306)),
+    'port': int(os.environ.get('MYSQL_PORT', '3306')),
     'user': os.environ.get('MYSQL_USER', 'root'),
     'password': os.environ.get('MYSQL_PASSWORD', 'password'),
     'database': os.environ.get('MYSQL_DATABASE', 'green_taxi_dw'),
     'allow_local_infile': True
 }
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-TAX_ZONE_CSV = os.path.join(SCRIPT_DIR, 'taxi_zone_lookup.csv')
-PARQUET_PATTERN = os.path.join(SCRIPT_DIR, 'green_tripdata_2021-*.parquet').replace('\\', '/')
-SCHEMA_SQL = os.path.join(SCRIPT_DIR, 'schema.sql')
-
-# MySQL Uploads folder for ultra-fast LOAD DATA INFILE
-MYSQL_UPLOADS_DIR = r"C:\ProgramData\MySQL\MySQL Server 8.0\Uploads"
-EXPORT_CSV_PATH = os.path.join(MYSQL_UPLOADS_DIR, "fact_green_trips.csv").replace('\\', '/')
 
 
 def get_db_connection(create_db_if_missing=True):
