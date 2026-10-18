@@ -1,17 +1,9 @@
--- ==============================================================================
--- STADVDB MCO1: Target Star Schema DDL for 2021 NYC Green Taxi Data Warehouse
--- DBMS: MySQL 8.0 (InnoDB Engine)
--- ==============================================================================
-
 CREATE DATABASE IF NOT EXISTS `green_taxi_dw`
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
 
 USE `green_taxi_dw`;
 
--- ------------------------------------------------------------------------------
--- 1. Drop existing tables in reverse dependency order
--- ------------------------------------------------------------------------------
 DROP TABLE IF EXISTS `fact_green_trips`;
 DROP TABLE IF EXISTS `dim_trip_type`;
 DROP TABLE IF EXISTS `dim_payment_type`;
@@ -21,13 +13,9 @@ DROP TABLE IF EXISTS `dim_location`;
 DROP TABLE IF EXISTS `dim_time`;
 DROP TABLE IF EXISTS `dim_date`;
 
--- ------------------------------------------------------------------------------
--- 2. Dimension Tables
--- ------------------------------------------------------------------------------
-
--- Dimension 1: Date Dimension (Grain: 1 day)
+-- Dimension: Date
 CREATE TABLE `dim_date` (
-    `date_id`       INT NOT NULL,              -- Format: YYYYMMDD
+    `date_id`       INT NOT NULL,
     `full_date`     DATE NOT NULL,
     `year`          INT NOT NULL,
     `quarter`       INT NOT NULL,
@@ -39,60 +27,57 @@ CREATE TABLE `dim_date` (
     PRIMARY KEY (`date_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dimension 2: Time Dimension (Grain: 1 hour, 24 rows)
+-- Dimension: Time
 CREATE TABLE `dim_time` (
-    `time_id`           INT NOT NULL,          -- Hour of day: 0 to 23
+    `time_id`           INT NOT NULL,
     `full_time`         TIME NOT NULL,
-    `hour_24`           INT NOT NULL,          -- 0 to 23
-    `day_bracket`       VARCHAR(20) NOT NULL,  -- 'Late Night', 'Early Morning', 'Morning Rush', 'Midday', 'Evening Rush', 'Night'
-    `is_peak_surcharge` TINYINT(1) NOT NULL,   -- 1 for hours 16-19, else 0
+    `hour_24`           INT NOT NULL,
+    `day_bracket`       VARCHAR(20) NOT NULL,
+    `is_peak_surcharge` TINYINT(1) NOT NULL,
     PRIMARY KEY (`time_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dimension 3: Location Dimension (NYC TLC Zones 1 to 263)
+-- Dimension: Location
 CREATE TABLE `dim_location` (
-    `location_id`   INT NOT NULL,              -- 1 to 263
+    `location_id`   INT NOT NULL,
     `borough`       VARCHAR(50) NOT NULL,
     `zone`          VARCHAR(100) NOT NULL,
     `service_zone`  VARCHAR(50) DEFAULT NULL,
     PRIMARY KEY (`location_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dimension 4: Vendor Dimension
+-- Dimension: Vendor
 CREATE TABLE `dim_vendor` (
     `vendor_id`     INT NOT NULL,
     `vendor_name`   VARCHAR(50) NOT NULL,
     PRIMARY KEY (`vendor_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dimension 5: Rate Code Dimension
+-- Dimension: Rate Code
 CREATE TABLE `dim_rate_code` (
     `rate_code_id`   INT NOT NULL,
     `rate_code_name` VARCHAR(50) NOT NULL,
     PRIMARY KEY (`rate_code_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dimension 6: Payment Type Dimension
+-- Dimension: Payment Type
 CREATE TABLE `dim_payment_type` (
     `payment_type_id`   INT NOT NULL,
     `payment_type_name` VARCHAR(50) NOT NULL,
     PRIMARY KEY (`payment_type_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dimension 7: Trip Type Dimension
+-- Dimension: Trip Type
 CREATE TABLE `dim_trip_type` (
     `trip_type_id`   INT NOT NULL,
     `trip_type_name` VARCHAR(50) NOT NULL,
     PRIMARY KEY (`trip_type_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ------------------------------------------------------------------------------
--- 3. Fact Table
--- ------------------------------------------------------------------------------
+-- Fact Table
 CREATE TABLE `fact_green_trips` (
     `trip_id`                BIGINT AUTO_INCREMENT NOT NULL,
     
-    -- Role-Playing Foreign Keys
     `pickup_date_id`         INT NOT NULL,
     `dropoff_date_id`        INT NOT NULL,
     `pickup_time_id`         INT NOT NULL,
@@ -100,17 +85,14 @@ CREATE TABLE `fact_green_trips` (
     `pickup_location_id`     INT NOT NULL,
     `dropoff_location_id`    INT NOT NULL,
     
-    -- Standard Foreign Keys
     `vendor_id`              INT NOT NULL,
     `rate_code_id`           INT NOT NULL,
     `payment_type_id`        INT NOT NULL,
     `trip_type_id`           INT NOT NULL,
     
-    -- Degenerate Dimensions & Counts
     `store_and_fwd_flag`     CHAR(1) DEFAULT 'N',
     `passenger_count`        INT DEFAULT 1,
     
-    -- Numeric Measures (Strictly DECIMAL(8,2))
     `trip_distance`          DECIMAL(8,2) NOT NULL DEFAULT 0.00,
     `fare_amount`            DECIMAL(8,2) NOT NULL DEFAULT 0.00,
     `extra`                  DECIMAL(8,2) NOT NULL DEFAULT 0.00,
@@ -124,7 +106,6 @@ CREATE TABLE `fact_green_trips` (
     
     PRIMARY KEY (`trip_id`),
     
-    -- Foreign Key Constraints (Matching Star Schema Diagram)
     CONSTRAINT `fk_fgt_pickup_date`
         FOREIGN KEY (`pickup_date_id`) REFERENCES `dim_date` (`date_id`),
     CONSTRAINT `fk_fgt_dropoff_date`
@@ -146,7 +127,6 @@ CREATE TABLE `fact_green_trips` (
     CONSTRAINT `fk_fgt_trip_type`
         FOREIGN KEY (`trip_type_id`) REFERENCES `dim_trip_type` (`trip_type_id`),
 
-    -- Foreign Key Indexes for Fast Join Traversal
     INDEX `idx_fgt_pickup_date` (`pickup_date_id`),
     INDEX `idx_fgt_dropoff_date` (`dropoff_date_id`),
     INDEX `idx_fgt_pickup_time` (`pickup_time_id`),
@@ -158,7 +138,6 @@ CREATE TABLE `fact_green_trips` (
     INDEX `idx_fgt_payment_type` (`payment_type_id`),
     INDEX `idx_fgt_trip_type` (`trip_type_id`),
 
-    -- Composite Performance Indexes for High-Frequency Dimensional Slicing
     INDEX `idx_fgt_pu_date_loc` (`pickup_date_id`, `pickup_location_id`),
     INDEX `idx_fgt_pu_loc_do_loc` (`pickup_location_id`, `dropoff_location_id`),
     INDEX `idx_fgt_pu_time_date` (`pickup_time_id`, `pickup_date_id`)

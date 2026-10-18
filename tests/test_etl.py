@@ -1,11 +1,3 @@
-"""
-STADVDB MCO1: Comprehensive ETL & Data Warehouse Validation Suite
-Covers:
-  1. Data Wrangling & Cleaning Unit Tests (Edge Cases on sample data)
-  2. Live Data Warehouse Referential Integrity & Sanity Tests (on the 1,052,419 rows)
-Uses Python's built-in unittest framework (no external pip packages required).
-"""
-
 import os
 import unittest
 import duckdb
@@ -21,11 +13,8 @@ DB_CONFIG = {
 }
 
 
-# ==============================================================================
-# Suite 1: Data Wrangling & Cleaning Logic (Fast In-Memory Tests)
-# ==============================================================================
 class TestETLDataWrangling(unittest.TestCase):
-    """Tests ETL filtering, cleaning, key derivation, and edge-case handling."""
+    """Unit tests for ETL transformation and filtering rules."""
 
     @classmethod
     def setUpClass(cls):
@@ -241,34 +230,25 @@ class TestETLDataWrangling(unittest.TestCase):
         self.assertEqual(row['trip_duration_seconds'], 1500)
 
     def test_inverted_timestamps_rejected(self):
-        """Data Wrangling Rule: Drops trips with dropoff earlier than pickup."""
         rejected = self.df_clean[self.df_clean['trip_id'] == 3]
         self.assertEqual(len(rejected), 0)
 
     def test_negative_total_amount_rejected(self):
-        """Data Wrangling Rule: Drops trips with total_amount <= 0."""
         rejected = self.df_clean[self.df_clean['trip_id'] == 4]
         self.assertEqual(len(rejected), 0)
 
     def test_out_of_range_location_rejected(self):
-        """Data Wrangling Rule: Drops trips with LocationID not in 1..263."""
         rejected = self.df_clean[self.df_clean['trip_id'] == 5]
         self.assertEqual(len(rejected), 0)
 
     def test_null_defaults_and_payment_mapping(self):
-        """Data Wrangling Rule: Maps payment_type 0 to 5 ('Unknown') and assigns defaults."""
         row = self.df_clean[self.df_clean['trip_id'] == 6].iloc[0]
         self.assertEqual(row['payment_type_id'], 5)
         self.assertEqual(row['store_and_fwd_flag'], 'N')
         self.assertEqual(row['passenger_count'], 1)
 
 
-# ==============================================================================
-# Suite 2: Live Warehouse Sanity & Referential Integrity Tests
-# ==============================================================================
 class TestLiveWarehouseIntegrity(unittest.TestCase):
-    """Verifies live MySQL green_taxi_dw table structure, counts, and FK constraints."""
-
     @classmethod
     def setUpClass(cls):
         try:
@@ -296,7 +276,6 @@ class TestLiveWarehouseIntegrity(unittest.TestCase):
             self.assertIn(tbl, tables, f"Table {tbl} missing from database!")
 
     def test_dimension_row_counts(self):
-        """Confirms required row counts for all dimension tables."""
         counts = {
             'dim_time': 24,
             'dim_location': 263,
@@ -308,23 +287,18 @@ class TestLiveWarehouseIntegrity(unittest.TestCase):
         for tbl, expected in counts.items():
             self.cursor.execute(f"SELECT COUNT(*) FROM {tbl};")
             actual = self.cursor.fetchone()[0]
-            self.assertEqual(actual, expected, f"{tbl} count mismatch!")
+            self.assertEqual(actual, expected, f"{tbl} count mismatch")
 
         self.cursor.execute("SELECT COUNT(*) FROM dim_date;")
         date_count = self.cursor.fetchone()[0]
-        self.assertGreaterEqual(date_count, 365, "dim_date should have >= 365 days")
+        self.assertGreaterEqual(date_count, 365)
 
     def test_fact_table_row_count(self):
-        """Confirms fact_green_trips loaded full 1.05M dataset."""
         self.cursor.execute("SELECT COUNT(*) FROM fact_green_trips;")
         count = self.cursor.fetchone()[0]
-        self.assertGreaterEqual(count, 1000000, f"Expected >= 1M rows, got {count:,}")
+        self.assertGreaterEqual(count, 1000000)
 
     def test_zero_orphaned_foreign_keys(self):
-        """
-        Referential Integrity Test:
-        Validates that 0 orphaned foreign keys exist in fact_green_trips.
-        """
         fk_checks = [
             ("pickup_date_id", "dim_date", "date_id"),
             ("dropoff_date_id", "dim_date", "date_id"),
@@ -346,10 +320,9 @@ class TestLiveWarehouseIntegrity(unittest.TestCase):
             """
             self.cursor.execute(query)
             orphans = self.cursor.fetchone()[0]
-            self.assertEqual(orphans, 0, f"Found {orphans} orphaned records in fact_green_trips.{fk_col}!")
+            self.assertEqual(orphans, 0, f"Found orphaned records in {fk_col}")
 
     def test_measure_domain_bounds(self):
-        """Data Quality Test: Validates metric boundaries and domain constraints."""
         self.cursor.execute("""
         SELECT 
             MIN(trip_distance),

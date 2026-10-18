@@ -1,9 +1,3 @@
-"""
-==============================================================================
-STADVDB MCO1: DuckDB to MySQL ETL Pipeline for NYC Green Taxi 2021 Data Warehouse
-==============================================================================
-"""
-
 import calendar
 import datetime
 import os
@@ -12,9 +6,6 @@ import duckdb
 import mysql.connector
 import pandas as pd
 
-# ------------------------------------------------------------------------------
-# Directory Paths (Resolved relative to project root)
-# ------------------------------------------------------------------------------
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SRC_DIR)
 
@@ -26,13 +17,15 @@ TAX_ZONE_CSV = os.path.join(DATA_DIR, 'taxi_zone_lookup.csv')
 PARQUET_PATTERN = os.path.join(DATA_DIR, 'green_tripdata_2021-*.parquet').replace('\\', '/')
 SCHEMA_SQL = os.path.join(SQL_DIR, 'schema.sql')
 
-# MySQL Uploads folder for ultra-fast LOAD DATA INFILE
-MYSQL_UPLOADS_DIR = r"C:\ProgramData\MySQL\MySQL Server 8.0\Uploads"
-EXPORT_CSV_PATH = os.path.join(MYSQL_UPLOADS_DIR, "fact_green_trips.csv").replace('\\', '/')
+# Use MySQL secure uploads folder if on Windows, else use local data directory
+WIN_UPLOADS = r"C:\ProgramData\MySQL\MySQL Server 8.0\Uploads"
+if os.path.exists(WIN_UPLOADS):
+    EXPORT_CSV_PATH = os.path.join(WIN_UPLOADS, "fact_green_trips.csv").replace('\\', '/')
+else:
+    EXPORT_CSV_PATH = os.path.join(DATA_DIR, "fact_green_trips.csv").replace('\\', '/')
 
 
 def load_env(env_path):
-    """Loads environment variables from .env file into os.environ if present."""
     if not os.path.exists(env_path):
         return
     with open(env_path, 'r', encoding='utf-8') as f:
@@ -43,19 +36,15 @@ def load_env(env_path):
             key, val = stripped.split('=', 1)
             key = key.strip()
             val = val.strip().strip("'\"")
-            # Set into os.environ only if not already explicitly set
             if key and key not in os.environ:
                 os.environ[key] = val
 
 
 load_env(ENV_FILE)
 
-# ------------------------------------------------------------------------------
-# Configuration (Can be set in .env or via environment variables)
-# ------------------------------------------------------------------------------
 DB_CONFIG = {
     'host': os.environ.get('MYSQL_HOST', '127.0.0.1'),
-    'port': int(os.environ.get('MYSQL_PORT', '3306')),
+    'port': int(os.environ.get('MYSQL_PORT', 3306)),
     'user': os.environ.get('MYSQL_USER', 'root'),
     'password': os.environ.get('MYSQL_PASSWORD', 'password'),
     'database': os.environ.get('MYSQL_DATABASE', 'green_taxi_dw'),
@@ -64,7 +53,6 @@ DB_CONFIG = {
 
 
 def get_db_connection(create_db_if_missing=True):
-    """Establishes connection to MySQL server."""
     if create_db_if_missing:
         conn = mysql.connector.connect(
             host=DB_CONFIG['host'],
@@ -81,13 +69,11 @@ def get_db_connection(create_db_if_missing=True):
 
 
 def run_schema_ddl(conn):
-    """Executes the DDL from schema.sql."""
-    print(">> Initializing Schema DDL from schema.sql...")
+    print(">> Initializing schema from schema.sql...")
     cursor = conn.cursor()
     with open(SCHEMA_SQL, 'r', encoding='utf-8') as f:
         ddl_script = f.read()
 
-    # Execute statements separated by semicolons
     statements = [stmt.strip() for stmt in ddl_script.split(';') if stmt.strip()]
     for stmt in statements:
         if stmt.upper().startswith("CREATE DATABASE") or stmt.upper().startswith("USE"):
@@ -95,15 +81,13 @@ def run_schema_ddl(conn):
         cursor.execute(stmt)
     conn.commit()
     cursor.close()
-    print("   [+] Schema tables and indexes created successfully.")
+    print("   [+] Schema initialized.")
 
 
 def load_static_dimensions(conn):
-    """Populates dim_vendor, dim_rate_code, dim_payment_type, dim_trip_type."""
-    print(">> Populating static dimensions...")
+    print(">> Populating lookup dimensions...")
     cursor = conn.cursor()
 
-    # 1. dim_vendor
     vendors = [
         (1, 'Creative Mobile Technologies, LLC'),
         (2, 'VeriFone Inc.')
@@ -114,7 +98,6 @@ def load_static_dimensions(conn):
         vendors
     )
 
-    # 2. dim_rate_code
     rate_codes = [
         (1, 'Standard rate'),
         (2, 'JFK'),
@@ -129,7 +112,6 @@ def load_static_dimensions(conn):
         rate_codes
     )
 
-    # 3. dim_payment_type
     payment_types = [
         (1, 'Credit card'),
         (2, 'Cash'),
@@ -144,7 +126,6 @@ def load_static_dimensions(conn):
         payment_types
     )
 
-    # 4. dim_trip_type
     trip_types = [
         (1, 'Street-hail'),
         (2, 'Dispatch')
@@ -157,11 +138,10 @@ def load_static_dimensions(conn):
 
     conn.commit()
     cursor.close()
-    print("   [+] Static dimensions loaded: dim_vendor, dim_rate_code, dim_payment_type, dim_trip_type.")
+    print("   [+] Lookup dimensions loaded.")
 
 
 def load_dim_location(conn):
-    """Loads dim_location from taxi_zone_lookup.csv (Locations 1 to 263)."""
     print(f">> Populating dim_location from {TAX_ZONE_CSV}...")
     df = pd.read_csv(TAX_ZONE_CSV)
     df.columns = [c.lower() for c in df.columns]
@@ -182,12 +162,11 @@ def load_dim_location(conn):
     )
     conn.commit()
     cursor.close()
-    print(f"   [+] Loaded {len(records)} zones into dim_location (Locations 1 to 263).")
+    print(f"   [+] Loaded {len(records)} locations.")
 
 
 def load_dim_date(conn):
-    """Populates dim_date for all days of 2021 plus buffer for 2022-01-01 dropoffs."""
-    print(">> Populating dim_date (2021-01-01 to 2022-01-02)...")
+    print(">> Populating dim_date...")
     start_date = datetime.date(2021, 1, 1)
     end_date = datetime.date(2022, 1, 2)
     delta = datetime.timedelta(days=1)
@@ -223,18 +202,16 @@ def load_dim_date(conn):
     )
     conn.commit()
     cursor.close()
-    print(f"   [+] Loaded {len(records)} calendar days into dim_date.")
+    print(f"   [+] Loaded {len(records)} dates.")
 
 
 def load_dim_time(conn):
-    """Populates dim_time (hourly grain: 24 rows, 0 to 23)."""
-    print(">> Populating dim_time (24 hours: 0 to 23)...")
+    print(">> Populating dim_time...")
     records = []
     for h in range(24):
         time_id = h
         full_time = f"{h:02d}:00:00"
 
-        # Day brackets
         if 0 <= h <= 5:
             day_bracket = 'Late Night'
         elif 6 <= h <= 8:
@@ -248,9 +225,7 @@ def load_dim_time(conn):
         else:
             day_bracket = 'Night'
 
-        # Peak surcharge hour (16-19)
         is_peak_surcharge = 1 if 16 <= h <= 19 else 0
-
         records.append((time_id, full_time, h, day_bracket, is_peak_surcharge))
 
     cursor = conn.cursor()
@@ -262,20 +237,15 @@ def load_dim_time(conn):
     )
     conn.commit()
     cursor.close()
-    print(f"   [+] Loaded {len(records)} hours into dim_time.")
+    print(f"   [+] Loaded {len(records)} hours.")
 
 
 def extract_transform_and_load_facts(conn):
-    """
-    Uses DuckDB to extract and transform records from Parquet files according to strict criteria,
-    then loads into MySQL fact_green_trips using high-speed bulk ingestion.
-    """
-    print(f">> Extracting & Transforming data using DuckDB from {PARQUET_PATTERN}...")
+    print(f">> Extracting & transforming Parquet files from {PARQUET_PATTERN}...")
     start_time = time.time()
 
     duck_con = duckdb.connect()
 
-    # Optimized transformation SQL
     transform_sql = f"""
     SELECT 
         CAST(strftime(lpep_pickup_datetime, '%Y%m%d') AS INT) AS pickup_date_id,
@@ -321,57 +291,33 @@ def extract_transform_and_load_facts(conn):
 
     cursor = conn.cursor()
 
-    # Attempt fast export to CSV for LOAD DATA INFILE
     loaded_via_infile = False
     try:
-        print(f">> Exporting transformed records to {EXPORT_CSV_PATH} via DuckDB...")
         duck_con.execute(f"COPY ({transform_sql}) TO '{EXPORT_CSV_PATH}' (HEADER FALSE, DELIMITER ',');")
         
-        # Check file size
-        file_size_mb = os.path.getsize(EXPORT_CSV_PATH) / (1024 * 1024)
-        print(f"   [+] Exported CSV successfully ({file_size_mb:.2f} MB).")
-        
-        print(">> Ingesting into MySQL fact_green_trips via LOAD DATA INFILE...")
-        load_sql = f"""
-        LOAD DATA INFILE '{EXPORT_CSV_PATH}'
-        INTO TABLE fact_green_trips
-        FIELDS TERMINATED BY ','
-        LINES TERMINATED BY '\\n'
+        load_cols = """
         (
-            pickup_date_id,
-            dropoff_date_id,
-            pickup_time_id,
-            dropoff_time_id,
-            pickup_location_id,
-            dropoff_location_id,
-            vendor_id,
-            rate_code_id,
-            payment_type_id,
-            trip_type_id,
-            store_and_fwd_flag,
-            passenger_count,
-            trip_distance,
-            fare_amount,
-            extra,
-            mta_tax,
-            tip_amount,
-            tolls_amount,
-            improvement_surcharge,
-            congestion_surcharge,
-            total_amount,
-            trip_duration_seconds
-        );
+            pickup_date_id, dropoff_date_id, pickup_time_id, dropoff_time_id,
+            pickup_location_id, dropoff_location_id, vendor_id, rate_code_id,
+            payment_type_id, trip_type_id, store_and_fwd_flag, passenger_count,
+            trip_distance, fare_amount, extra, mta_tax, tip_amount, tolls_amount,
+            improvement_surcharge, congestion_surcharge, total_amount, trip_duration_seconds
+        )
         """
-        cursor.execute(load_sql)
-        conn.commit()
-        loaded_via_infile = True
-        print("   [+] Ingested all records using LOAD DATA INFILE successfully!")
+        try:
+            cursor.execute(f"LOAD DATA LOCAL INFILE '{EXPORT_CSV_PATH}' INTO TABLE fact_green_trips FIELDS TERMINATED BY ',' LINES TERMINATED BY '\\n' {load_cols};")
+            conn.commit()
+            loaded_via_infile = True
+            print("   [+] Ingested records via LOAD DATA LOCAL INFILE.")
+        except Exception:
+            cursor.execute(f"LOAD DATA INFILE '{EXPORT_CSV_PATH}' INTO TABLE fact_green_trips FIELDS TERMINATED BY ',' LINES TERMINATED BY '\\n' {load_cols};")
+            conn.commit()
+            loaded_via_infile = True
+            print("   [+] Ingested records via LOAD DATA INFILE.")
     except Exception as e:
-        print(f"   [!] LOAD DATA INFILE encountered note: {e}")
-        print("   [*] Falling back to high-throughput chunked stream insertion...")
+        print(f"   [*] Fallback to streaming batch insert: {e}")
 
     if not loaded_via_infile:
-        # Fallback: Stream in chunks using DuckDB cursor fetch
         chunk_size = 25000
         duck_cur = duck_con.cursor()
         duck_cur.execute(transform_sql)
@@ -397,40 +343,34 @@ def extract_transform_and_load_facts(conn):
             total_rows += len(batch)
             print(f"   -> Inserted {total_rows:,} records...")
 
-    # Verification
+    # Cleanup temporary CSV export if created
+    if os.path.exists(EXPORT_CSV_PATH) and EXPORT_CSV_PATH.endswith("fact_green_trips.csv"):
+        try:
+            os.remove(EXPORT_CSV_PATH)
+        except Exception:
+            pass
+
     cursor.execute("SELECT COUNT(*) FROM fact_green_trips;")
     final_count = cursor.fetchone()[0]
     elapsed = time.time() - start_time
-    print(f">> Fact table load complete: {final_count:,} rows inserted in {elapsed:.2f} seconds!")
+    print(f">> Fact table load complete: {final_count:,} rows inserted in {elapsed:.2f} seconds.")
     cursor.close()
 
 
 def main():
-    print("=" * 70)
-    print("STARTING ETL PROCESS: NYC GREEN TAXI 2021 DATA WAREHOUSE")
-    print("=" * 70)
-    
     total_start = time.time()
     
-    # 1. Connect & Init DDL
     conn = get_db_connection(create_db_if_missing=True)
     run_schema_ddl(conn)
-
-    # 2. Populate Dimensions
     load_static_dimensions(conn)
     load_dim_location(conn)
     load_dim_date(conn)
     load_dim_time(conn)
-
-    # 3. Extract, Transform & Ingest Fact Table
     extract_transform_and_load_facts(conn)
-
     conn.close()
     
     total_elapsed = time.time() - total_start
-    print("=" * 70)
-    print(f"ETL COMPLETED SUCCESSFULLY IN {total_elapsed:.2f} SECONDS!")
-    print("=" * 70)
+    print(f"ETL completed in {total_elapsed:.2f} seconds.")
 
 
 if __name__ == '__main__':
