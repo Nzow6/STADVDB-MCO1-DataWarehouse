@@ -88,13 +88,84 @@ REPORTS = {
         "optimized_query": None
     },
     "report_4": {
-        "title": "[Enter Your Query Title Here]",
-        "operation": "[ROLLUP / DRILLDOWN / DICE / PIVOT]",
-        "author": "[Your Name]",
-        "index_name": None,
-        "index_create_sql": None,
-        "original_query": None,
-        "optimized_query": None
+        "title": "Multi-Dimensional Performance and Revenue Analysis by Weekend, Borough, Vendor, and Period for December(Rollup + Slice)",
+        "operation": "ROLLUP and SLICE",
+        "author": "Ryan",
+        "index_name": "index_fgt_cube_borough_covering",
+        "index_create_sql": """
+        CREATE INDEX index_fgt_cube_borough_covering 
+        ON fact_green_trips (pickup_date_id, pickup_location_id, vendor_id, total_amount);
+        """,
+        "original_query": """
+        SELECT 
+            d.is_weekend,
+            l.borough,
+            v.vendor_name AS vendor,
+            d.year,
+            d.month,
+            COUNT(f.trip_id) AS total_trips,
+            ROUND(SUM(f.total_amount), 2) AS total_amount_sum,
+            ROUND(AVG(f.total_amount), 2) AS avg_trip_amount
+
+        FROM fact_green_trips f
+        JOIN dim_date d 
+            ON f.pickup_date_id = d.date_id
+        JOIN dim_location l 
+            ON f.pickup_location_id = l.location_id
+        JOIN dim_vendor v 
+            ON f.vendor_id = v.vendor_id
+
+        WHERE d.month = 12 
+
+        GROUP BY 
+            d.is_weekend, 
+            l.borough, 
+            v.vendor_name, 
+            d.year, 
+            d.month WITH ROLLUP
+
+        ORDER BY 
+            d.is_weekend IS NULL, d.is_weekend,
+            l.borough IS NULL, l.borough,
+            v.vendor IS NULL, v.vendor,
+            d.year IS NULL, d.year,
+            d.month IS NULL, d.month;
+        """,
+        "optimized_query": """
+        SELECT 
+            d.is_weekend,
+            l.borough,
+            v.vendor_name AS vendor,
+            d.year,
+            d.month,
+            COUNT(f.trip_id) AS total_trips,
+            ROUND(SUM(f.total_amount), 2) AS total_amount_sum,
+            ROUND(AVG(f.total_amount), 2) AS avg_trip_amount
+
+        FROM fact_green_trips f
+        JOIN dim_date d 
+            ON f.pickup_date_id = d.date_id
+        JOIN dim_location l 
+            ON f.pickup_location_id = l.location_id
+        JOIN dim_vendor v 
+            ON f.vendor_id = v.vendor_id
+
+        WHERE d.month = 12  
+
+        GROUP BY 
+            d.is_weekend, 
+            l.borough, 
+            v.vendor_name, 
+            d.year, 
+            d.month WITH ROLLUP
+
+        ORDER BY 
+            d.is_weekend IS NULL, d.is_weekend,
+            l.borough IS NULL, l.borough,
+            v.vendor IS NULL, v.vendor,
+            d.year IS NULL, d.year,
+            d.month IS NULL, d.month;
+        """
     },
     "report_5": {
         "title": "Green Taxi Aggregate Revenue and Distance by Payment Type and Date (Rollup)",
