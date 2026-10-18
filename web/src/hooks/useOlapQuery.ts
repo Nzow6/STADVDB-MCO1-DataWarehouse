@@ -99,6 +99,49 @@ export function useOlapQuery() {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [autoRun, setAutoRun] = useState<boolean>(true);
 
+  // Local MySQL Server state
+  const [serverStatus, setServerStatus] = useState<{
+    state: 'connected' | 'disconnected' | 'connecting';
+    engine: string;
+    database: string;
+    totalRows: number;
+  }>({
+    state: 'connecting',
+    engine: 'MySQL Warehouse (Local Server)',
+    database: 'green_taxi_dw',
+    totalRows: 1052419,
+  });
+
+  // Verify backend server health
+  const checkServerStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/status');
+      if (res.ok) {
+        const data = await res.json();
+        setServerStatus({
+          state: 'connected',
+          engine: data.engine || 'MySQL Warehouse (Local Server)',
+          database: data.database || 'green_taxi_dw',
+          totalRows: data.totalRows || 1052419,
+        });
+        return true;
+      }
+    } catch {
+      // Backend not running
+    }
+    setServerStatus((prev) => ({
+      ...prev,
+      state: 'disconnected',
+    }));
+    return false;
+  }, []);
+
+  useEffect(() => {
+    checkServerStatus();
+    const timer = window.setInterval(checkServerStatus, 10000);
+    return () => window.clearInterval(timer);
+  }, [checkServerStatus]);
+
   // Subscribe to DuckDB status
   useEffect(() => {
     return duckdbClient.subscribe((status) => {
@@ -106,16 +149,17 @@ export function useOlapQuery() {
     });
   }, []);
 
-  // Compute active compiled SQL
+  // Compute active compiled SQL (use MySQL dialect if connected)
   const getCompiledSql = useCallback(() => {
+    const dialect = serverStatus.state === 'connected' ? 'mysql' : 'duckdb';
     if (mode === 'preset') {
-      return compileDynamicPresetQuery(activeReportId, dynamicParams, 'duckdb');
+      return compileDynamicPresetQuery(activeReportId, dynamicParams, dialect);
     } else if (mode === 'builder') {
-      return compileVisualQuery(builderState, 'duckdb');
+      return compileVisualQuery(builderState, dialect);
     } else {
-      return customSql || compileDynamicPresetQuery(activeReportId, dynamicParams, 'duckdb');
+      return customSql || compileDynamicPresetQuery(activeReportId, dynamicParams, dialect);
     }
-  }, [mode, activeReportId, dynamicParams, builderState, customSql]);
+  }, [mode, activeReportId, dynamicParams, builderState, customSql, serverStatus.state]);
 
   // Synchronize custom SQL editor when switching to SQL mode
   useEffect(() => {
@@ -124,39 +168,94 @@ export function useOlapQuery() {
     }
   }, [mode, getCompiledSql, customSql]);
 
-  // Run Query implementation
+  // Abort controller ref to cancel previous in-flight requests
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Run Query implementation (routes to local MySQL server for all 1.05M rows)
   const runQuery = useCallback(async (sqlToRun?: string) => {
+    // Abort previous in-flight request if still running
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     const sql = sqlToRun || getCompiledSql();
 
     try {
-      if (duckdbStatus.state === 'ready') {
-        const queryRes = await duckdbClient.query(sql);
-        setResult(queryRes);
-      } else {
-        // Fallback to In-Memory Engine
-        if (mode === 'preset') {
-          const mockRes = executeMockDynamicReport(activeReportId, dynamicParams, sql);
-          setResult(mockRes);
+      // 1. Primary: Local MySQL API Server
+      let apiHandled = false;
+      try {
+        const apiResp = await fetch('/api/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql }),
+          signal: controller.signal,
+        });
+
+        if (apiResp.ok) {
+          const queryRes: QueryResult = await apiResp.json();
+          setResult(queryRes);
+          setServerStatus((prev) => ({ ...prev, state: 'connected' }));
+          apiHandled = true;
         } else {
-          const mockRes = executeMockVisualQuery(builderState, sql);
-          setResult(mockRes);
+          const errJson = await apiResp.json().catch(() => ({}));
+          console.warn('[MySQL API Error]', errJson);
+          if (errJson.error) {
+            setResult({
+              columns: [{ name: 'error', type: 'VARCHAR' }],
+              rows: [{ error: errJson.error }],
+              rowCount: 0,
+              executionTimeMs: 0,
+              compiledSql: sql,
+              sourceEngine: 'MySQL Server (Execution Error)',
+            });
+            apiHandled = true;
+          }
+        }
+      } catch (apiErr: any) {
+        if (apiErr.name === 'AbortError') {
+          // Request was aborted by newer query
+          return;
+        }
+        console.warn('[MySQL API Unreachable, checking fallbacks]', apiErr);
+      }
+
+      // 2. Secondary fallback: DuckDB-Wasm client / Mock (only if server did not handle)
+      if (!apiHandled) {
+        try {
+          if (duckdbStatus.state === 'ready') {
+            const queryRes = await duckdbClient.query(sql);
+            setResult(queryRes);
+          } else {
+            // Tertiary fallback: In-Memory Engine
+            if (mode === 'preset') {
+              const mockRes = executeMockDynamicReport(activeReportId, dynamicParams, sql);
+              setResult(mockRes);
+            } else {
+              const mockRes = executeMockVisualQuery(builderState, sql);
+              setResult(mockRes);
+            }
+          }
+        } catch (err: any) {
+          console.warn('[useOlapQuery] Fallback error:', err);
+          if (mode === 'preset') {
+            const mockRes = executeMockDynamicReport(activeReportId, dynamicParams, sql);
+            setResult(mockRes);
+          } else {
+            const mockRes = executeMockVisualQuery(builderState, sql);
+            setResult(mockRes);
+          }
         }
       }
-    } catch (err: any) {
-      console.warn('[useOlapQuery] Query execution fallback:', err);
-      // Fallback on DuckDB syntax or execution error
-      if (mode === 'preset') {
-        const mockRes = executeMockDynamicReport(activeReportId, dynamicParams, sql);
-        setResult(mockRes);
-      } else {
-        const mockRes = executeMockVisualQuery(builderState, sql);
-        setResult(mockRes);
-      }
     } finally {
-      setLoading(false);
+      // ALWAYS stop loading if this is still the active query
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
-  }, [duckdbStatus.state, getCompiledSql, mode, activeReportId, dynamicParams, builderState]);
+  }, [getCompiledSql, duckdbStatus.state, mode, activeReportId, dynamicParams, builderState]);
 
   // Auto-run trigger with debouncing
   const debounceTimer = useRef<number | null>(null);
@@ -169,12 +268,12 @@ export function useOlapQuery() {
 
     debounceTimer.current = window.setTimeout(() => {
       runQuery();
-    }, 150);
+    }, 450);
 
     return () => {
       if (debounceTimer.current) window.clearTimeout(debounceTimer.current);
     };
-  }, [activeReportId, dynamicParams, builderState, autoRun, mode]);
+  }, [activeReportId, dynamicParams, builderState, autoRun, mode, runQuery]);
 
   // Keyboard shortcut listener (Cmd/Ctrl + Enter)
   useEffect(() => {
@@ -303,5 +402,6 @@ export function useOlapQuery() {
     autoRun,
     setAutoRun,
     duckdbStatus,
+    serverStatus,
   };
 }

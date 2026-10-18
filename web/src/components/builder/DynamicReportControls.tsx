@@ -35,23 +35,52 @@ export const DynamicReportControls: React.FC<DynamicReportControlsProps> = ({
       </div>
 
       {/* Report 1: Karl's SLICE Controls */}
+      {/* Report 1: Karl's SLICE Controls */}
       {reportId === 'report_1' && (
-        <div>
-          <label className="block text-[11px] font-mono text-slate-600 mb-1 flex items-center gap-1">
-            <Clock className="w-3 h-3 text-emerald-600" />
-            <span>Day Bracket Filter (Slice)</span>
-          </label>
-          <select
-            value={params.dayBracket}
-            onChange={(e) => onChange({ dayBracket: e.target.value })}
-            className="w-full bg-white text-slate-900 font-mono text-xs rounded border border-slate-300 px-2.5 py-1 focus:outline-none focus:border-emerald-600"
-          >
-            {DAY_BRACKETS.map((bracket) => (
-              <option key={bracket} value={bracket}>
-                {bracket} {bracket === 'Evening Rush' && '(Baseline Default)'}
-              </option>
-            ))}
-          </select>
+        <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-mono text-slate-600 mb-1 flex items-center gap-1">
+                <Clock className="w-3 h-3 text-emerald-600" />
+                <span>Day Bracket Filter (Slice)</span>
+              </label>
+              <select
+                value={params.dayBracket}
+                onChange={(e) => onChange({ dayBracket: e.target.value })}
+                className="w-full bg-white text-slate-900 font-mono text-xs rounded border border-slate-300 px-2.5 py-1 focus:outline-none focus:border-emerald-600"
+              >
+                {DAY_BRACKETS.map((bracket) => (
+                  <option key={bracket} value={bracket}>
+                    {bracket} {bracket === 'Evening Rush' && '(Baseline Default)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-mono text-slate-600 mb-1 flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-emerald-600" />
+                <span>Specific Pickup Date (Optional)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={params.pickupDate || ''}
+                  onChange={(e) => onChange({ pickupDate: e.target.value })}
+                  className="w-full bg-white text-slate-900 font-mono text-xs rounded border border-slate-300 px-2 py-1 focus:outline-none focus:border-emerald-600"
+                />
+                {params.pickupDate && (
+                  <button
+                    onClick={() => onChange({ pickupDate: '' })}
+                    className="text-[11px] text-slate-500 hover:text-rose-600 px-1 font-mono"
+                    title="Clear date"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -78,13 +107,20 @@ export const DynamicReportControls: React.FC<DynamicReportControlsProps> = ({
 
             <div>
               <label className="block text-[11px] font-mono text-slate-600 mb-1">
-                Payment Method
+                Payment Method Filter
               </label>
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs text-slate-700">
-                <span className="w-2 h-2 rounded-full bg-emerald-600 flex-shrink-0" />
-                <span className="font-semibold text-slate-900">Credit Card Only</span>
-                <span className="text-[10px] text-slate-500">(tips are 0 on cash)</span>
-              </div>
+              <select
+                value={params.paymentTypeIds?.length === 0 ? 0 : (params.paymentTypeIds?.[0] ?? 1)}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  onChange({ paymentTypeIds: val === 0 ? [] : [val] });
+                }}
+                className="w-full bg-white text-slate-900 font-mono text-xs rounded border border-slate-300 px-2.5 py-1 focus:outline-none focus:border-emerald-600"
+              >
+                <option value={1}>Credit Card Only (f.payment_type_id = 1) [Default]</option>
+                <option value={0}>All Payment Methods (Baseline queries.py)</option>
+                <option value={2}>Cash Only (f.payment_type_id = 2)</option>
+              </select>
             </div>
           </div>
 

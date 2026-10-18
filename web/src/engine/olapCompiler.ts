@@ -238,8 +238,10 @@ ORDER BY revenue_rank ASC;`.trim();
         const dbList = params.dayBrackets.map((b) => `'${b.replace(/'/g, "''")}'`).join(', ');
         whereParts.push(`t.day_bracket IN (${dbList})`);
       }
-      // Credit card payments (payment_type_id = 1) because tips are recorded for credit card
-      whereParts.push('f.payment_type_id = 1');
+      // Payment filter: default to credit card (id=1) if selected or if paymentTypeIds specified
+      if (params.paymentTypeIds && params.paymentTypeIds.length > 0 && !params.paymentTypeIds.includes(0)) {
+        whereParts.push(`f.payment_type_id IN (${params.paymentTypeIds.join(', ')})`);
+      }
 
       const whereSql = whereParts.length > 0 ? 'WHERE ' + whereParts.join('\n  AND ') : '';
 
@@ -273,40 +275,44 @@ ORDER BY
       if (params.startDate && params.endDate) {
         whereParts.push(`dd.full_date BETWEEN '${params.startDate.replace(/'/g, "''")}' AND '${params.endDate.replace(/'/g, "''")}'`);
       }
-      const whereSql = whereParts.length > 0 ? '\nWHERE ' + whereParts.join('\n  AND ') : '';
+      const whereSql = whereParts.length > 0 ? '\n    WHERE ' + whereParts.join('\n      AND ') : '';
 
-      const havingClause = params.aboveAverageOnly !== false
-        ? `HAVING 
-    total_annual_earnings > (
-        SELECT AVG(zone_totals.zone_revenue)
-        FROM (
-            SELECT SUM(f2.total_amount) AS zone_revenue
-            FROM fact_green_trips f2
-            JOIN dim_location dl2 ON f2.pickup_location_id = dl2.location_id
-            GROUP BY dl2.borough, dl2.zone
-        ) zone_totals
-    )`
+      const whereFilter = params.aboveAverageOnly !== false
+        ? '\nWHERE total_annual_earnings > avg_zone_revenue'
         : '';
 
-      return `SELECT
-    dl.borough, 
-    dl.zone,
-    SUM(CASE WHEN dd.quarter = 1 THEN f.total_amount ELSE 0 END) AS Q1_earnings,
-    SUM(CASE WHEN dd.quarter = 2 THEN f.total_amount ELSE 0 END) AS Q2_earnings,
-    SUM(CASE WHEN dd.quarter = 3 THEN f.total_amount ELSE 0 END) AS Q3_earnings,
-    SUM(CASE WHEN dd.quarter = 4 THEN f.total_amount ELSE 0 END) AS Q4_earnings,
-    SUM(f.total_amount) AS total_annual_earnings,
-    CONCAT(ROUND(100.0 * COUNT(CASE WHEN tip_amount > 0 THEN 1 END) / COUNT(*), 2), '%') AS tip_percentage
+      return `WITH zone_summary AS (
+    SELECT
+        dl.borough, 
+        dl.zone,
+        ROUND(SUM(CASE WHEN dd.quarter = 1 THEN f.total_amount ELSE 0 END), 2) AS Q1_earnings,
+        ROUND(SUM(CASE WHEN dd.quarter = 2 THEN f.total_amount ELSE 0 END), 2) AS Q2_earnings,
+        ROUND(SUM(CASE WHEN dd.quarter = 3 THEN f.total_amount ELSE 0 END), 2) AS Q3_earnings,
+        ROUND(SUM(CASE WHEN dd.quarter = 4 THEN f.total_amount ELSE 0 END), 2) AS Q4_earnings,
+        ROUND(SUM(f.total_amount), 2) AS total_annual_earnings,
+        CONCAT(ROUND(100.0 * AVG(f.tip_amount > 0), 2), '%') AS tip_percentage,
+        AVG(SUM(f.total_amount)) OVER () AS avg_zone_revenue
+    FROM 
+        fact_green_trips f
+    JOIN 
+        dim_location dl ON f.pickup_location_id = dl.location_id
+    JOIN 
+        dim_date dd ON f.pickup_date_id = dd.date_id${whereSql}
+    GROUP BY 
+        dl.borough, 
+        dl.zone
+)
+SELECT 
+    borough,
+    zone,
+    Q1_earnings,
+    Q2_earnings,
+    Q3_earnings,
+    Q4_earnings,
+    total_annual_earnings,
+    tip_percentage
 FROM 
-    fact_green_trips f
-JOIN 
-    dim_location dl ON f.pickup_location_id = dl.location_id
-JOIN 
-    dim_date dd ON f.pickup_date_id = dd.date_id${whereSql}
-GROUP BY 
-    dl.borough, 
-    dl.zone
-${havingClause}
+    zone_summary${whereFilter}
 ORDER BY 
     total_annual_earnings DESC;`.trim();
     }
@@ -345,7 +351,7 @@ ORDER BY
         : `ORDER BY 
     d.is_weekend IS NULL, d.is_weekend,
     l.borough IS NULL, l.borough,
-    v.vendor IS NULL, v.vendor,
+    v.vendor_name IS NULL, v.vendor_name,
     d.year IS NULL, d.year,
     d.month IS NULL, d.month`;
 
@@ -405,6 +411,35 @@ ${orderClause};`.trim();
             ? `GROUP BY ROLLUP (p.payment_type_name, ${dateCols})`
             : `GROUP BY p.payment_type_name, ${dateCols} WITH ROLLUP`)
         : `GROUP BY p.payment_type_name, ${dateCols}`;
+
+      if (dialect === 'mysql') {
+        return `SELECT 
+    p.payment_type_name AS payment_type,
+    ${dateCols},
+    SUM(f.total_trips) AS total_trips,
+    ROUND(SUM(f.total_revenue), 2) AS total_revenue,
+    ROUND(SUM(f.total_tip), 2) AS total_tip,
+    ROUND(SUM(f.sum_dist) / NULLIF(SUM(f.count_dist), 0), 2) AS avg_dist
+FROM (
+    SELECT 
+        pickup_date_id,
+        payment_type_id,
+        COUNT(trip_id) AS total_trips,
+        SUM(total_amount) AS total_revenue,
+        SUM(tip_amount) AS total_tip,
+        SUM(trip_distance) AS sum_dist,
+        COUNT(trip_distance) AS count_dist
+    FROM fact_green_trips
+    GROUP BY pickup_date_id, payment_type_id
+) f
+JOIN dim_payment_type p 
+    ON f.payment_type_id = p.payment_type_id
+JOIN dim_date d 
+    ON f.pickup_date_id = d.date_id${whereSql}
+${rollupClause}
+ORDER BY 
+    ${orderCols};`.trim();
+      }
 
       return `SELECT 
     p.payment_type_name AS payment_type,

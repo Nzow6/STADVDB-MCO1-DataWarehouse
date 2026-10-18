@@ -188,3 +188,19 @@ UNION ALL SELECT 'fact_green_trips', COUNT(*) FROM fact_green_trips;
 - `dim_payment_type`: 6 rows
 - `dim_trip_type`: 2 rows
 - `fact_green_trips`: 1,052,419 rows
+
+---
+
+## 🖥️ Interactive OLAP Web Workbench
+
+The repository includes a full-stack OLAP Workbench web interface that executes queries directly against your local MySQL data warehouse over all 1,052,419 records:
+
+1. **Start the Local Server** (executes queries on MySQL):
+   ```bash
+   python src/server.py
+   ```
+2. **Start the Frontend Web App**:
+   ```bash
+   npm run dev
+   ```
+3. Open `http://localhost:5173/` in your browser to interactively explore all 5 reports, visual query builder, dynamic parameter filters, and analytical visualizations.

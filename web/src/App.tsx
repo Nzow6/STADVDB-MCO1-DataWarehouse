@@ -41,6 +41,7 @@ export function App() {
     autoRun,
     setAutoRun,
     duckdbStatus,
+    serverStatus,
   } = useOlapQuery();
 
   const [activeTab, setActiveTab] = useState<'grid' | 'chart'>('grid');
@@ -106,6 +107,7 @@ export function App() {
         activeReportId={activeReportId}
         onSelectReport={selectReportPreset}
         duckdbStatus={duckdbStatus}
+        serverStatus={serverStatus}
       />
 
       {/* 3-Pane Workbench (Left pane only shown when Visual Builder is active) */}

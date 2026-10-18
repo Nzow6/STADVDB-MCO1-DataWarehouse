@@ -4,12 +4,20 @@ import { DuckDBStatus } from '../../engine/duckdbClient';
 import { OLAP_REPORT_PRESETS } from '../../engine/schemaData';
 import { WorkbenchMode } from '../../types/olap';
 
+interface ServerStatus {
+  state: 'connected' | 'disconnected' | 'connecting';
+  engine: string;
+  database: string;
+  totalRows: number;
+}
+
 interface AppHeaderProps {
   mode: WorkbenchMode;
   setMode: (mode: WorkbenchMode) => void;
   activeReportId: string;
   onSelectReport: (id: string) => void;
   duckdbStatus: DuckDBStatus;
+  serverStatus?: ServerStatus;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -18,6 +26,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   activeReportId,
   onSelectReport,
   duckdbStatus,
+  serverStatus,
 }) => {
   const [reportDropdownOpen, setReportDropdownOpen] = useState(false);
   const activePreset = OLAP_REPORT_PRESETS.find((p) => p.id === activeReportId);
@@ -125,26 +134,31 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         </div>
       </div>
 
-      {/* Right: Worker Connection Status Pill */}
+      {/* Right: MySQL Warehouse Server Status Pill */}
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 border border-slate-200 text-[11px]">
           <span
-            className={`w-2 h-2 rounded-full ${duckdbStatus.state === 'ready'
+            className={`w-2 h-2 rounded-full ${
+              serverStatus?.state === 'connected'
                 ? 'bg-emerald-600 animate-subtle-pulse'
-                : duckdbStatus.state === 'initializing'
+                : serverStatus?.state === 'connecting'
                   ? 'bg-amber-500 animate-pulse'
-                  : 'bg-emerald-500'
-              }`}
+                  : duckdbStatus.state === 'ready'
+                    ? 'bg-emerald-600'
+                    : 'bg-emerald-500'
+            }`}
           />
           <span className="text-slate-800 font-mono text-[11px] font-medium">
-            {duckdbStatus.state === 'ready'
-              ? 'DuckDB-Wasm (Worker Ready)'
-              : duckdbStatus.state === 'initializing'
-                ? 'Initializing Wasm...'
-                : 'In-Memory Engine (Active)'}
+            {serverStatus?.state === 'connected'
+              ? 'MySQL Warehouse (Local Server)'
+              : serverStatus?.state === 'connecting'
+                ? 'Connecting to MySQL...'
+                : duckdbStatus.state === 'ready'
+                  ? 'DuckDB-Wasm (Active)'
+                  : 'In-Memory Engine (Active)'}
           </span>
           <span className="text-slate-500 text-[10px] font-mono border-l border-slate-300 pl-1.5 ml-0.5">
-            1.05M rows
+            {serverStatus?.totalRows ? `${serverStatus.totalRows.toLocaleString()} rows` : '1,052,419 rows'}
           </span>
         </div>
       </div>
