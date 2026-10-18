@@ -292,11 +292,22 @@ REPORTS = {
                 d.year,
                 d.month,
                 d.day,
-                COUNT(f.trip_id) AS total_trips,
-                ROUND(SUM(f.total_amount), 2) AS total_revenue,
-                ROUND(SUM(f.tip_amount), 2) AS total_tip,
-                ROUND(AVG(f.trip_distance), 2) AS avg_dist
-            FROM fact_green_trips f
+                SUM(f.total_trips) AS total_trips,
+                ROUND(SUM(f.total_revenue), 2) AS total_revenue,
+                ROUND(SUM(f.total_tip), 2) AS total_tip,
+                ROUND(SUM(f.sum_dist) / SUM(f.count_dist), 2) AS avg_dist
+            FROM (
+                SELECT 
+                    payment_type_id,
+                    pickup_date_id,
+                    COUNT(trip_id) AS total_trips,
+                    SUM(total_amount) AS total_revenue,
+                    SUM(tip_amount) AS total_tip,
+                    SUM(trip_distance) AS sum_dist,
+                    COUNT(trip_distance) AS count_dist
+                FROM fact_green_trips
+                GROUP BY payment_type_id, pickup_date_id
+                ) f
             JOIN dim_payment_type p 
                 ON f.payment_type_id = p.payment_type_id
             JOIN dim_date d 
