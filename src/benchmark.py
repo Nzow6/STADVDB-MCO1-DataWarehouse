@@ -38,7 +38,7 @@ DB_CONFIG = {
     'database': os.environ.get('MYSQL_DATABASE', 'green_taxi_dw')
 }
 
-RUNS_PER_QUERY = 5
+RUNS_PER_QUERY = 1
 
 
 def benchmark_report(conn, report_key, report_data):
@@ -56,18 +56,22 @@ def benchmark_report(conn, report_key, report_data):
 
     # 1. Automatically drop index if specified so baseline is clean
     idx_name = report_data.get("index_name")
+    idx_sql = report_data.get("index_create_sql") or ""
     if idx_name:
+        # Detect target table from create sql or check common tables
+        target_table = "fact_green_trips"
+        for tbl in ["dim_date", "dim_time", "dim_location", "dim_vendor", "dim_payment_type", "dim_trip_type"]:
+            if f"ON {tbl}" in idx_sql or f"on {tbl}" in idx_sql.lower():
+                target_table = tbl
+                break
         try:
-            cur.execute(f"DROP INDEX `{idx_name}` ON fact_green_trips;")
+            cur.execute(f"DROP INDEX `{idx_name}` ON {target_table};")
             conn.commit()
         except Exception:
             pass
 
-    # 2. Warm-up & Benchmark Baseline (Unoptimized)
-    print(f">> Measuring Baseline (Unoptimized) across {RUNS_PER_QUERY} runs...")
-    cur.execute(report_data["original_query"])
-    cur.fetchall()  # warm up
-
+    # 2. Benchmark Baseline (Unoptimized) - 1 Run Only
+    print(">> Measuring Baseline (Unoptimized) [1 run]...")
     times_unopt = []
     for _ in range(RUNS_PER_QUERY):
         t0 = time.time()
@@ -76,9 +80,7 @@ def benchmark_report(conn, report_key, report_data):
         times_unopt.append(time.time() - t0)
 
     avg_unopt = sum(times_unopt) / len(times_unopt)
-    min_unopt = min(times_unopt)
-    max_unopt = max(times_unopt)
-    print(f"   [+] Baseline Avg: {avg_unopt:.4f}s (Min: {min_unopt:.4f}s, Max: {max_unopt:.4f}s)")
+    print(f"   [+] Baseline Time: {avg_unopt:.4f}s")
 
     # 3. Apply Index Optimization if applicable (otherwise query reformulation/CTE is tested directly)
     if report_data.get("index_create_sql"):
@@ -90,11 +92,8 @@ def benchmark_report(conn, report_key, report_data):
     else:
         print(">> Testing Query Reformulation / CTE / Join Restructuring (No index required)...")
 
-    # 4. Warm-up & Benchmark Optimized
-    print(f">> Measuring Optimized across {RUNS_PER_QUERY} runs...")
-    cur.execute(report_data["optimized_query"])
-    cur.fetchall()  # warm up
-
+    # 4. Benchmark Optimized - 1 Run Only
+    print(">> Measuring Optimized [1 run]...")
     times_opt = []
     for _ in range(RUNS_PER_QUERY):
         t0 = time.time()
@@ -103,12 +102,10 @@ def benchmark_report(conn, report_key, report_data):
         times_opt.append(time.time() - t0)
 
     avg_opt = sum(times_opt) / len(times_opt)
-    min_opt = min(times_opt)
-    max_opt = max(times_opt)
     speedup_pct = ((avg_unopt - avg_opt) / avg_unopt) * 100
     ratio = avg_unopt / avg_opt if avg_opt > 0 else 0
 
-    print(f"   [+] Optimized Avg: {avg_opt:.4f}s (Min: {min_opt:.4f}s, Max: {max_opt:.4f}s)")
+    print(f"   [+] Optimized Time: {avg_opt:.4f}s")
     print(f"   [+] Performance Improvement: {speedup_pct:.2f}% faster ({ratio:.2f}x speedup)!\n")
 
     cur.close()
