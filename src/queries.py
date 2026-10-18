@@ -97,12 +97,57 @@ REPORTS = {
         "optimized_query": None
     },
     "report_5": {
-        "title": "[Enter Your Query Title Here]",
-        "operation": "[ROLLUP / DRILLDOWN / DICE / PIVOT]",
-        "author": "[Your Name]",
-        "index_name": None,
-        "index_create_sql": None,
-        "original_query": None,
-        "optimized_query": None
+        "title": "Green Taxi Aggregate Revenue and Distance by Payment Type and Date (Rollup)",
+        "operation": "ROLLUP",
+        "author": "Ryan",
+        "index_name": "index_fgt_rollup_covering",
+        "index_create_sql": """
+            CREATE INDEX index_fgt_rollup_covering
+            ON fact_green_trips (pickup_date_id, payment_type_id);
+        """,
+        "original_query": """
+            SELECT 
+                p.payment_type_name AS payment_type,
+                d.year,
+                d.month,
+                d.day,
+                COUNT(f.trip_id) AS total_trips,
+                ROUND(SUM(f.total_amount), 2) AS total_revenue,
+                ROUND(SUM(f.tip_amount), 2) AS total_tip,
+                ROUND(AVG(f.trip_distance), 2) AS avg_dist
+            FROM fact_green_trips f
+            JOIN dim_payment_type p 
+                ON f.payment_type_id = p.payment_type_id
+            JOIN dim_date d 
+                ON f.pickup_date_id = d.date_id
+            GROUP BY p.payment_type_name, d.year, d.month, d.day WITH ROLLUP
+            ORDER BY 
+                d.year IS NULL, d.year, 
+                d.month IS NULL, d.month, 
+                d.day IS NULL, d.day, 
+                p.payment_type_name;
+        """,
+        "optimized_query": """
+            SELECT 
+                p.payment_type_name AS payment_type,
+                d.year,
+                d.month,
+                d.day,
+                COUNT(f.trip_id) AS total_trips,
+                ROUND(SUM(f.total_amount), 2) AS total_revenue,
+                ROUND(SUM(f.tip_amount), 2) AS total_tip,
+                ROUND(AVG(f.trip_distance), 2) AS avg_dist
+            FROM fact_green_trips f
+            JOIN dim_payment_type p 
+                ON f.payment_type_id = p.payment_type_id
+            JOIN dim_date d 
+                ON f.pickup_date_id = d.date_id
+            GROUP BY p.payment_type_name, d.year, d.month, d.day WITH ROLLUP
+            ORDER BY 
+                d.year IS NULL, d.year, 
+                d.month IS NULL, d.month, 
+                d.day IS NULL, d.day, 
+                p.payment_type_name;
+        """
     }
 }
