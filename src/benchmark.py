@@ -10,6 +10,26 @@ import time
 import mysql.connector
 from queries import REPORTS
 
+def load_env(env_path):
+    """Loads environment variables from .env file into os.environ if present."""
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#') or '=' not in stripped:
+                continue
+            key, val = stripped.split('=', 1)
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            if key and key not in os.environ:
+                os.environ[key] = val
+
+
+# Load .env file from project root if it exists
+ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env')
+load_env(ENV_FILE)
+
 DB_CONFIG = {
     'host': os.environ.get('MYSQL_HOST', '127.0.0.1'),
     'port': int(os.environ.get('MYSQL_PORT', 3306)),

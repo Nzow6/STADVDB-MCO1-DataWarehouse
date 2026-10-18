@@ -61,9 +61,9 @@
 > ⚠️ *GenAI is permitted for dashboard UI/frontend development, but **BANNED for authoring the underlying SQL queries***.
 
 - [ ] **Formulate advanced OLAP SQL queries**:
-    - [ ] **Roll-up**: Increasing aggregation level along a hierarchy (e.g., daily -> monthly -> quarterly taxi revenue).
+    - [] **Roll-up**: Increasing aggregation level along a hierarchy (e.g., daily -> monthly -> quarterly taxi revenue).
     - [ ] **Drill-down**: Decreasing aggregation level to reveal finer grain (e.g., borough -> individual pick-up zones).
-    - [ ] **Slice**: Filtering by one specific dimension member (e.g., single borough or single vendor).
+    - [] **Slice**: Filtering by one specific dimension member (e.g., single borough or single vendor).
     - [ ] **Dice**: Subsetting via multi-dimensional criteria/ranges (e.g., peak-hours + credit card + specific distance bracket).
     - [ ] **Pivot**: Rotating data axes to analyze multi-dimensional summaries (e.g., hour of day vs. day of week matrix).
     - [ ] Use advanced SQL syntax (`GROUP BY ROLLUP/CUBE`, window functions, CTEs).

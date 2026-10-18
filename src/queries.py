@@ -65,18 +65,64 @@ REPORTS = {
         """
     },
 
-    # --------------------------------------------------------------------------
-    # Slots for Groupmates (Open Placeholders)
-    # Pick an empty slot below and fill in your details and SQL queries!
-    # --------------------------------------------------------------------------
     "report_2": {
-        "title": "[Enter Your Query Title Here]",
-        "operation": "[ROLLUP / DRILLDOWN / DICE / PIVOT]",
-        "author": "[Your Name]",
-        "index_name": None,        # Optional: set to index name if using an index, else None
-        "index_create_sql": None,  # Optional: "CREATE INDEX ...", else None
-        "original_query": None,    # Paste your unoptimized SQL string here
-        "optimized_query": None    # Paste your optimized SQL string here
+        "title": "Monthly Weekday Borough Tip Rate Ranking (Dice)",
+        "operation": "DICE",
+        "author": "Enzo",  
+
+        "index_name": "idx_is_weekend",
+        "index_create_sql": """
+            CREATE INDEX idx_is_weekend ON dim_date (is_weekend);
+        """,
+
+        # 1. Unoptimized (Baseline) Query:
+        "original_query": """
+            SELECT 
+                d.month_name, 
+                l.borough, 
+                (SUM(f.tip_amount) / NULLIF(SUM(f.fare_amount), 0)) AS avg_tip_rate,
+                DENSE_RANK() OVER (
+                    PARTITION BY d.month_name 
+                    ORDER BY (SUM(f.tip_amount) / NULLIF(SUM(f.fare_amount), 0)) DESC
+                ) AS borough_tip_rank
+            FROM fact_green_trips f
+            JOIN dim_date d ON f.pickup_date_id = d.date_id
+            JOIN dim_location l ON f.pickup_location_id = l.location_id
+            JOIN dim_time t ON f.pickup_time_id = t.time_id
+            JOIN dim_payment_type pt ON f.payment_type_id = pt.payment_type_id
+            JOIN dim_trip_type tt ON f.trip_type_id = tt.trip_type_id
+            WHERE d.is_weekend = 0
+            GROUP BY 
+                d.month, 
+                d.month_name, 
+                l.borough
+            ORDER BY 
+                d.month ASC, 
+                borough_tip_rank ASC;
+        """,
+
+        # 2. Optimized Query:
+        "optimized_query": """
+            SELECT 
+                d.month_name, 
+                l.borough, 
+                (SUM(f.tip_amount) / NULLIF(SUM(f.fare_amount), 0)) AS avg_tip_rate,
+                DENSE_RANK() OVER (
+                    PARTITION BY d.month 
+                    ORDER BY (SUM(f.tip_amount) / NULLIF(SUM(f.fare_amount), 0)) DESC
+                ) AS borough_tip_rank
+            FROM fact_green_trips f
+            JOIN dim_date d ON f.pickup_date_id = d.date_id
+            JOIN dim_location l ON f.pickup_location_id = l.location_id
+            WHERE d.is_weekend = 0 
+            GROUP BY 
+                d.month, 
+                d.month_name, 
+                l.borough
+            ORDER BY 
+                d.month ASC, 
+                borough_tip_rank ASC;
+        """
     },
     "report_3": {
         "title": "[Enter Your Query Title Here]",
