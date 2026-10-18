@@ -76,7 +76,7 @@ export interface QueryResult {
   rowCount: number;
   executionTimeMs: number;
   compiledSql: string;
-  sourceEngine: 'DuckDB-Wasm' | 'In-Memory Engine';
+  sourceEngine: 'DuckDB-Wasm' | 'In-Memory Engine' | (string & {});
   cacheHit?: boolean;
   error?: string | null;
 }
